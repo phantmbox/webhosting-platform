@@ -38,6 +38,37 @@ async function ensureDemoProject(){
 
 app.get("/health",async(_q,r)=>{try{await db.query("SELECT 1");r.json({ok:true,database:"ok",openai:!!client})}catch{r.status(503).json({ok:false})}});
 app.get("/admin/api/projects",async(_q,r)=>{try{await ensureDemoProject();const [rows]=await db.query("SELECT id,name,slug,status FROM projects ORDER BY id DESC");r.json(rows)}catch(e){r.status(500).json({error:e.message})}});
+function customerInput(body){
+ const name=String(body?.name||"").trim();
+ const email=String(body?.email||"").trim();
+ if(!name || name.length>190) throw new Error("Vul een geldige klantnaam in");
+ if(email && (email.length>190 || !/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(email))) throw new Error("Vul een geldig e-mailadres in");
+ return {name,email:email||null};
+}
+app.get("/admin/api/customers",async(_q,r)=>{try{
+ const [rows]=await db.query(`SELECT c.id,c.name,c.email,c.status,c.created_at,COUNT(DISTINCT p.id) projects,COUNT(DISTINCT d.id) domains
+ FROM customers c LEFT JOIN projects p ON p.customer_id=c.id LEFT JOIN domains d ON d.project_id=p.id
+ GROUP BY c.id ORDER BY c.id DESC`); r.json(rows);
+}catch(e){r.status(500).json({error:e.message})}});
+app.post("/admin/api/customers",async(q,r)=>{try{
+ const v=customerInput(q.body); const [x]=await db.query("INSERT INTO customers(name,email,status) VALUES(?,?,'active')",[v.name,v.email]);
+ const [rows]=await db.query("SELECT id,name,email,status,created_at FROM customers WHERE id=?",[x.insertId]); r.status(201).json(rows[0]);
+}catch(e){r.status(400).json({error:e.message})}});
+app.put("/admin/api/customers/:id",async(q,r)=>{try{
+ const v=customerInput(q.body); const [x]=await db.query("UPDATE customers SET name=?,email=? WHERE id=?",[v.name,v.email,q.params.id]);
+ if(!x.affectedRows) return r.status(404).json({error:"Klant niet gevonden"}); r.json({ok:true});
+}catch(e){r.status(400).json({error:e.message})}});
+app.patch("/admin/api/customers/:id/status",async(q,r)=>{try{
+ const status=String(q.body?.status||""); if(!["active","blocked"].includes(status)) throw new Error("Ongeldige status");
+ const [x]=await db.query("UPDATE customers SET status=? WHERE id=?",[status,q.params.id]);
+ if(!x.affectedRows) return r.status(404).json({error:"Klant niet gevonden"}); r.json({ok:true,status});
+}catch(e){r.status(400).json({error:e.message})}});
+app.delete("/admin/api/customers/:id",async(q,r)=>{try{
+ const [p]=await db.query("SELECT COUNT(*) total FROM projects WHERE customer_id=?",[q.params.id]);
+ if(Number(p[0].total)>0) return r.status(409).json({error:"Klant heeft nog projecten. Verwijder of verplaats die eerst."});
+ const [x]=await db.query("DELETE FROM customers WHERE id=?",[q.params.id]); if(!x.affectedRows) return r.status(404).json({error:"Klant niet gevonden"});
+ r.json({ok:true});
+}catch(e){r.status(500).json({error:e.message})}});
 app.get("/admin/api/projects/:id/files",async(q,r)=>{try{const p=await projectById(q.params.id);r.json(await listFiles(safeRoot(WEB_ROOT,p.slug)))}catch(e){r.status(400).json({error:e.message})}});
 app.get("/admin/api/projects/:id/file",async(q,r)=>{try{const p=await projectById(q.params.id);r.json({path:q.query.path,content:await readFile(safeRoot(WEB_ROOT,p.slug),String(q.query.path||""))})}catch(e){r.status(400).json({error:e.message})}});
 
@@ -77,6 +108,6 @@ app.post("/admin/api/projects/:id/ai",async(q,r)=>{
 });
 
 app.use("/admin/assets",express.static(path.join(__dirname,"public"),{etag:true,maxAge:"1h"}));
-app.get(["/admin","/admin/","/admin/ai"],(_q,r)=>r.sendFile(path.join(__dirname,"public","index.html")));
+app.get(["/admin","/admin/","/admin/ai","/admin/customers"],(_q,r)=>r.sendFile(path.join(__dirname,"public","index.html")));
 app.use((_q,r)=>r.status(404).json({error:"Niet gevonden"}));
 app.listen(PORT,HOST,()=>console.log(`Webhosting admin: http://${HOST}:${PORT}/admin`));
