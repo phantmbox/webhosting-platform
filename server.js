@@ -41,21 +41,29 @@ app.get("/admin/api/projects",async(_q,r)=>{try{await ensureDemoProject();const 
 function customerInput(body){
  const name=String(body?.name||"").trim();
  const email=String(body?.email||"").trim();
+ const address=String(body?.address||"").trim();
+ const postcode=String(body?.postcode||"").trim();
+ const city=String(body?.city||"").trim();
+ const phone=String(body?.phone||"").trim();
  if(!name || name.length>190) throw new Error("Vul een geldige klantnaam in");
  if(email && (email.length>190 || !/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(email))) throw new Error("Vul een geldig e-mailadres in");
- return {name,email:email||null};
+ if(address.length>255) throw new Error("Adres is te lang");
+ if(postcode.length>20) throw new Error("Postcode is te lang");
+ if(city.length>120) throw new Error("Plaats is te lang");
+ if(phone.length>50) throw new Error("Telefoonnummer is te lang");
+ return {name,email:email||null,address:address||null,postcode:postcode||null,city:city||null,phone:phone||null};
 }
 app.get("/admin/api/customers",async(_q,r)=>{try{
- const [rows]=await db.query(`SELECT c.id,c.name,c.email,c.status,c.created_at,COUNT(DISTINCT p.id) projects,COUNT(DISTINCT d.id) domains
+ const [rows]=await db.query(`SELECT c.id,c.name,c.email,c.address,c.postcode,c.city,c.phone,c.status,c.created_at,COUNT(DISTINCT p.id) projects,COUNT(DISTINCT d.id) domains
  FROM customers c LEFT JOIN projects p ON p.customer_id=c.id LEFT JOIN domains d ON d.project_id=p.id
  GROUP BY c.id ORDER BY c.id DESC`); r.json(rows);
 }catch(e){r.status(500).json({error:e.message})}});
 app.post("/admin/api/customers",async(q,r)=>{try{
- const v=customerInput(q.body); const [x]=await db.query("INSERT INTO customers(name,email,status) VALUES(?,?,'active')",[v.name,v.email]);
- const [rows]=await db.query("SELECT id,name,email,status,created_at FROM customers WHERE id=?",[x.insertId]); r.status(201).json(rows[0]);
+ const v=customerInput(q.body); const [x]=await db.query("INSERT INTO customers(name,email,address,postcode,city,phone,status) VALUES(?,?,?,?,?,?,'active')",[v.name,v.email,v.address,v.postcode,v.city,v.phone]);
+ const [rows]=await db.query("SELECT id,name,email,address,postcode,city,phone,status,created_at FROM customers WHERE id=?",[x.insertId]); r.status(201).json(rows[0]);
 }catch(e){r.status(400).json({error:e.message})}});
 app.put("/admin/api/customers/:id",async(q,r)=>{try{
- const v=customerInput(q.body); const [x]=await db.query("UPDATE customers SET name=?,email=? WHERE id=?",[v.name,v.email,q.params.id]);
+ const v=customerInput(q.body); const [x]=await db.query("UPDATE customers SET name=?,email=?,address=?,postcode=?,city=?,phone=? WHERE id=?",[v.name,v.email,v.address,v.postcode,v.city,v.phone,q.params.id]);
  if(!x.affectedRows) return r.status(404).json({error:"Klant niet gevonden"}); r.json({ok:true});
 }catch(e){r.status(400).json({error:e.message})}});
 app.patch("/admin/api/customers/:id/status",async(q,r)=>{try{
