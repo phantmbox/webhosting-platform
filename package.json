@@ -1,0 +1,13 @@
+{
+  "name":"webhosting-platform-step2",
+  "version":"0.2.0",
+  "private":true,
+  "type":"module",
+  "scripts":{"start":"node server.js","check":"node --check server.js && node --check lib/workspace.js"},
+  "dependencies":{
+    "dotenv":"^17.2.3",
+    "express":"^5.1.0",
+    "mysql2":"^3.15.3",
+    "openai":"^6.9.1"
+  }
+}
